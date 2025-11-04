@@ -1,3 +1,5 @@
+
+# This may have to change on your local machine based on your user and password to your local postgres
 DB_CONFIG = {
     "host": "localhost",
     "port": 5433,

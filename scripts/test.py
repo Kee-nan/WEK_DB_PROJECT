@@ -3,6 +3,7 @@ import psycopg2
 from psycopg2 import sql
 from config import DB_CONFIG
 
+#Should be able to run this file to test if you can connect to your local postgres succesfully
 def test_connection():
     try:
         print("Connecting to PostgreSQL...")

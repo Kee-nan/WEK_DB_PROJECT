@@ -177,3 +177,15 @@ Experimental setup
 Key results
 
 Prepare slides or a brief paper summarizing findings.
+
+How to load database from zip into PostgreSQL
+Create an empty target database
+createdb -h localhost -p 5432 -U your_pg_user NBA_copy
+
+
+Or in psql:
+
+CREATE DATABASE NBA_copy;
+
+Restore the custom dump into the DB
+pg_restore -h localhost -p 5432 -U your_pg_user -d NBA_copy -v nba_backup.dump
