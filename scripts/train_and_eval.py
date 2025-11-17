@@ -37,10 +37,9 @@ def main():
     train_df.to_csv(train_csv, index=False)
     test_df.to_csv(test_csv, index=False)
 
-    print("Training baseline and LCM...")
-    # Train baseline and hybrid selector (this will also train or reuse LCM)
+    print("Training LCM and Hybrid selector (baseline = raw PostgreSQL estimate)...")
+    # Train LCM and hybrid selector (baseline remains raw PostgreSQL estimated_cost)
     lcm_model = lcm.train_and_save(train_csv, overwrite=True)
-    baseline = hybrid.train_baseline_linear(train_csv)
     baseline, lcm_model, selector = hybrid.train_hybrid_selector(train_csv)
 
     # Evaluate on held-out test set
@@ -48,7 +47,7 @@ def main():
 
     # Baseline predictions
     base_pred = baseline.predict(test_df[["estimated_cost"]].fillna(0))
-    evaluate_predictions(y_true, base_pred, "Baseline (mapped PostgreSQL cost)")
+    evaluate_predictions(y_true, base_pred, "Baseline (PostgreSQL estimated_cost)")
 
     # LCM predictions
     lcm_pred = lcm_model.predict(lcm.get_feature_matrix(test_df))

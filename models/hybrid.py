@@ -12,22 +12,23 @@ BASE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "baseline_linreg.pkl")
 HYBRID_MODEL_PATH = os.path.join(os.path.dirname(__file__), "hybrid_selector.pkl")
 
 
-def train_baseline_linear(csv_path):
-    df = pd.read_csv(csv_path)
-    # Map PostgreSQL's estimated cost to runtime with a simple linear model
-    X = df[["estimated_cost"]].fillna(0)
-    y = df["actual_runtime_ms"].fillna(0)
-    model = LinearRegression()
-    model.fit(X, y)
-    joblib.dump(model, BASE_MODEL_PATH)
-    print(f"Saved baseline linear model to {BASE_MODEL_PATH}")
-    return model
+class BaselineIdentity:
+    """Baseline predictor that returns PostgreSQL's `estimated_cost` as the estimate.
+
+    Keeps the baseline unchanged from the PostgreSQL optimizer output (no training).
+    The `predict` method accepts a DataFrame or 2D array-like and returns the `estimated_cost`.
+    """
+    def predict(self, X):
+        # Expect X to be a DataFrame containing an `estimated_cost` column
+        if hasattr(X, '__getitem__') and 'estimated_cost' in X.columns:
+            return X['estimated_cost'].to_numpy()
+        # If X is a numpy array or similar, just return it (best-effort)
+        return X
 
 
 def load_baseline():
-    if os.path.exists(BASE_MODEL_PATH):
-        return joblib.load(BASE_MODEL_PATH)
-    raise FileNotFoundError("Baseline model not found. Train it with train_baseline_linear().")
+    # Return identity baseline (no training) to preserve raw PostgreSQL estimates
+    return BaselineIdentity()
 
 
 def train_hybrid_selector(csv_path, random_state=42, max_depth=4):
@@ -39,8 +40,8 @@ def train_hybrid_selector(csv_path, random_state=42, max_depth=4):
     X_train, X_val, y_train, y_val, df_train, df_val = train_test_split(
         X, y_true, df, test_size=0.3, random_state=random_state)
 
-    # Baseline linear mapping
-    baseline = LinearRegression().fit(df_train[["estimated_cost"]].fillna(0), y_train)
+    # Baseline is the raw PostgreSQL estimated_cost (no training)
+    baseline = BaselineIdentity()
     lcm_model = None
     try:
         from .lcm import RandomForestRegressor  # not normally imported this way
@@ -56,6 +57,7 @@ def train_hybrid_selector(csv_path, random_state=42, max_depth=4):
         from .lcm import train_and_save
         lcm_model = train_and_save(csv_path, overwrite=True)
 
+    # Baseline prediction uses raw estimated_cost column
     pred_baseline = baseline.predict(df_val[["estimated_cost"]].fillna(0))
     pred_lcm = lcm_model.predict(X_val)
 
@@ -68,16 +70,17 @@ def train_hybrid_selector(csv_path, random_state=42, max_depth=4):
     selector = DecisionTreeClassifier(max_depth=max_depth, random_state=random_state)
     selector.fit(X_val, choose_lcm)
 
-    joblib.dump(baseline, BASE_MODEL_PATH)
+    # Save only the hybrid selector (baseline is identity, no need to persist)
     joblib.dump(selector, HYBRID_MODEL_PATH)
-    print(f"Saved hybrid selector to {HYBRID_MODEL_PATH} and baseline to {BASE_MODEL_PATH}")
+    print(f"Saved hybrid selector to {HYBRID_MODEL_PATH}")
     return baseline, lcm_model, selector
 
 
 def load_hybrid():
-    if not os.path.exists(HYBRID_MODEL_PATH) or not os.path.exists(BASE_MODEL_PATH):
-        raise FileNotFoundError("Hybrid components not found. Run train_hybrid_selector().")
-    baseline = joblib.load(BASE_MODEL_PATH)
+    if not os.path.exists(HYBRID_MODEL_PATH):
+        raise FileNotFoundError("Hybrid selector not found. Run train_hybrid_selector().")
+    # Baseline remains identity (raw Postgres estimates)
+    baseline = BaselineIdentity()
     selector = joblib.load(HYBRID_MODEL_PATH)
     try:
         from .lcm import load_model as load_lcm
