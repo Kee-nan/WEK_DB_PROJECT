@@ -65,13 +65,52 @@ def build_comparison():
 
     comp["closest_model"] = comp.apply(winner_row, axis=1)
 
+    # Try to merge chosen plan predictions produced by scripts/generate_plans.py
+    rich_choices = os.path.join(ROOT, 'results', 'generated_plan_choices_rich.csv')
+    if os.path.exists(rich_choices):
+      try:
+        rc = pd.read_csv(rich_choices)
+        # merge on query_name
+        comp = comp.merge(rc[['query_name', 'chosen_pred_ms', 'would_be_faster_than_baseline']], on='query_name', how='left')
+      except Exception:
+        comp['chosen_pred_ms'] = None
+        comp['would_be_faster_than_baseline'] = False
+    else:
+      comp['chosen_pred_ms'] = None
+      comp['would_be_faster_than_baseline'] = False
+
     # Summary metrics
     summary = {
         "mae_baseline": comp["err_baseline_ms"].mean(),
         "mae_lcm": comp["err_lcm_ms"].mean(),
         "mae_hybrid": comp["err_hybrid_ms"].mean(),
-        "winner_counts": comp["closest_model"].value_counts().to_dict()
+      "winner_counts": comp["closest_model"].value_counts().to_dict()
     }
+
+    # Plan-quality metrics: use chosen_pred_ms as the LCM's chosen-plan predicted runtime
+    # Average chosen predicted runtime (where available)
+    try:
+      chosen_mean = comp['chosen_pred_ms'].dropna().astype(float).mean()
+    except Exception:
+      chosen_mean = None
+
+    # Count where the LCM chosen-plan prediction is (predicted) faster than the
+    # baseline actual runtime
+    try:
+      lcm_better_count = int(comp[comp['would_be_faster_than_baseline'] == True].shape[0])
+    except Exception:
+      lcm_better_count = 0
+
+    # Count where Hybrid predicted runtime is less than baseline actual runtime
+    try:
+      hybrid_better_count = int((comp['pred_hybrid_ms'] < comp['actual_runtime_ms']).sum())
+    except Exception:
+      hybrid_better_count = 0
+
+    # Add plan-quality metrics into summary
+    summary['chosen_pred_mean_ms'] = chosen_mean
+    summary['lcm_predicted_better_count'] = lcm_better_count
+    summary['hybrid_predicted_better_count'] = hybrid_better_count
 
     comp.to_csv(OUT_CSV, index=False)
     print(f"Wrote comparison CSV to {OUT_CSV}")
@@ -124,6 +163,8 @@ def render_html(rows, summary):
         <th>pred_baseline_ms</th>
         <th>pred_lcm_ms</th>
         <th>pred_hybrid_ms</th>
+        <th>chosen_pred_ms</th>
+        <th>lcm_would_be_faster</th>
         <th>closest_model</th>
       </tr>
     </thead>
@@ -137,8 +178,13 @@ def render_html(rows, summary):
 
     // Fill summary
     const sDiv = document.getElementById('summary');
+    let planLine = '';
+    if (summary.chosen_pred_mean_ms != null) {
+      planLine = `<p class='small'><strong>LCM chosen-plan predicted mean</strong>: ${summary.chosen_pred_mean_ms.toFixed(2)} ms; <strong>LCM predicted better count</strong>: ${summary.lcm_predicted_better_count}; <strong>Hybrid predicted better count</strong>: ${summary.hybrid_predicted_better_count}.</p>`;
+    }
     sDiv.innerHTML = `<p class='small'><strong>MAE</strong> — Baseline: ${summary.mae_baseline.toFixed(2)} ms; LCM: ${summary.mae_lcm.toFixed(2)} ms; Hybrid: ${summary.mae_hybrid.toFixed(2)} ms.</p>`
-      + `<p class='small'><strong>Winner counts</strong> — ` + Object.entries(summary.winner_counts).map(kv => `${kv[0]}: ${kv[1]}`).join(', ') + `</p>`;
+      + `<p class='small'><strong>Winner counts</strong> — ` + Object.entries(summary.winner_counts).map(kv => `${kv[0]}: ${kv[1]}`).join(', ') + `</p>`
+      + planLine;
 
     // Fill table
     const tbody = document.querySelector('#results tbody');
@@ -151,6 +197,8 @@ def render_html(rows, summary):
         <td>${Number(r.pred_baseline_ms).toFixed(3)}</td>
         <td>${Number(r.pred_lcm_ms).toFixed(3)}</td>
         <td>${Number(r.pred_hybrid_ms).toFixed(3)}</td>
+        <td>${r.chosen_pred_ms != null ? Number(r.chosen_pred_ms).toFixed(3) : ''}</td>
+        <td>${r.would_be_faster_than_baseline ? 'yes' : 'no'}</td>
         <td>${r.closest_model}</td>`;
       tbody.appendChild(tr);
     });
