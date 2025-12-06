@@ -1,3 +1,5 @@
+-- Table Creation and Schema
+
 CREATE TABLE player (
     id INT PRIMARY KEY,
     full_name VARCHAR(100),

@@ -9,5 +9,6 @@ DB_CONFIG = {
 }
 
 # Base paths
+# Useful for navigation in scripts and models
 QUERY_DIR = "queries"
 RESULTS_DIR = "results/query_metrics.csv"
